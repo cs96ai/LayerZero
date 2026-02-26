@@ -127,7 +127,7 @@ async fn send_one_transaction(rpc_url: &str, escrow_address: &str) -> Result<()>
         .to(contract_address)
         .data(calldata)
         .value(amount)
-        .gas(200_000u64);
+        .gas(500_000u64);
 
     match client.send_transaction(tx, None).await {
         Ok(pending) => {
