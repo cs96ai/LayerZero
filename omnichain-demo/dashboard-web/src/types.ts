@@ -56,6 +56,32 @@ export interface MetricsResponse {
   total_retries: number;
 }
 
+// ──────────────────────────────────────────────
+// System health types
+// ──────────────────────────────────────────────
+
+export type SubsystemStatus = 'online' | 'warming_up' | 'offline' | 'shutting_down';
+
+export interface SubsystemHealth {
+  name: string;
+  status: SubsystemStatus;
+  latency_ms: number | null;
+  detail: string | null;
+}
+
+export interface GasInfo {
+  relayer_balance_wei: string;
+  relayer_balance_eth: string;
+  gas_price_gwei: number;
+  estimated_txs_remaining: number;
+  is_low: boolean;
+}
+
+export interface SystemHealthResponse {
+  systems: SubsystemHealth[];
+  gas: GasInfo;
+}
+
 export const PIPELINE_STEPS: LifecycleEvent['step'][] = [
   'locked', 'observed', 'verified', 'executed', 'minted', 'burned', 'rollback', 'settled',
 ];

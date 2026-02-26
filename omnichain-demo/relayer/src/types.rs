@@ -14,6 +14,8 @@ pub struct AppState {
     pub simulation_running: AtomicBool,
     /// Unix timestamp (seconds) when the simulation should auto-stop (0 = no deadline)
     pub simulation_deadline: AtomicI64,
+    /// Configuration snapshot for health checks
+    pub config: crate::config::Config,
 }
 
 /// Relayer state machine states for a cross-chain message.
@@ -135,4 +137,44 @@ fn default_duration_minutes() -> u64 {
 pub struct SimulationStatus {
     pub running: bool,
     pub remaining_seconds: i64,
+}
+
+/// Per-subsystem health status
+#[derive(Debug, Serialize)]
+pub struct SubsystemHealth {
+    pub name: String,
+    pub status: SubsystemStatus,
+    pub latency_ms: Option<u64>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubsystemStatus {
+    Online,
+    WarmingUp,
+    Offline,
+    ShuttingDown,
+}
+
+/// Response for /health/systems
+#[derive(Debug, Serialize)]
+pub struct SystemHealthResponse {
+    pub systems: Vec<SubsystemHealth>,
+    pub gas: GasInfo,
+}
+
+/// Ethereum gas / balance info for the relayer account
+#[derive(Debug, Serialize)]
+pub struct GasInfo {
+    /// Relayer ETH balance in wei (as string to avoid overflow)
+    pub relayer_balance_wei: String,
+    /// Relayer ETH balance as a human-readable ETH amount
+    pub relayer_balance_eth: String,
+    /// Current gas price in gwei
+    pub gas_price_gwei: f64,
+    /// Estimated number of transactions the relayer can still afford
+    pub estimated_txs_remaining: u64,
+    /// Whether the balance is considered low
+    pub is_low: bool,
 }

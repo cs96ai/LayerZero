@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { useAnalysis, useBackendHealth, useEventStream, useMetrics, useSimulation, useTransactionDetail, useTransactions } from './hooks';
-import type { CrossChainMessage, LifecycleEvent } from './types';
+import { useAnalysis, useBackendHealth, useEventStream, useMetrics, useSimulation, useSystemHealth, useTransactionDetail, useTransactions } from './hooks';
+import type { CrossChainMessage, GasInfo, LifecycleEvent, SubsystemHealth, SubsystemStatus } from './types';
 import { ACTOR_COLORS, PIPELINE_STEPS, STATUS_COLORS, STEP_ACTORS } from './types';
 
 // ──────────────────────────────────────────────
@@ -57,8 +57,9 @@ export default function App() {
   const backend = useBackendHealth();
   const { transactions } = useTransactions();
   const metrics = useMetrics();
-  const { events, connected } = useEventStream();
+  const { events, connected, clearEvents } = useEventStream();
   const simulation = useSimulation();
+  const health = useSystemHealth();
   const analysisHook = useAnalysis();
   const [selectedNonce, setSelectedNonce] = useState<number | null>(null);
   const [mobileTab, setMobileTab] = useState<'list' | 'detail' | 'events'>('list');
@@ -74,6 +75,13 @@ export default function App() {
     analysisHook.clear();
   };
 
+  const handleClear = () => {
+    if (confirm('Clear all demo data?')) {
+      simulation.clearData();
+      clearEvents();
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top bar — global controls */}
@@ -81,21 +89,30 @@ export default function App() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full flex-shrink-0" style={{ background: connected ? '#22c55e' : '#ef4444' }} />
-            <h1 className="text-sm sm:text-lg font-bold tracking-tight truncate">Omnichain Escrow</h1>
+            <h1 className="text-sm sm:text-lg font-bold tracking-tight truncate">Omnichain Demo</h1>
             <a href="https://github.com/cs96ai/LayerZero" target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300 underline underline-offset-2 hidden sm:inline">
               Source
             </a>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
+            <div className="hidden lg:flex">
+              <SystemStatusBar systems={health.systems} />
+            </div>
+            <GasIndicator gas={health.gas} />
             <div className="hidden md:flex">
               <MetricsBar metrics={metrics} />
             </div>
-            <SimulationControls {...simulation} />
+            <SimulationControls {...simulation} onClear={handleClear} />
           </div>
         </div>
-        {/* Mobile metrics row */}
-        <div className="flex md:hidden mt-2 justify-center">
-          <MetricsBar metrics={metrics} />
+        {/* Mobile second row: system status + metrics */}
+        <div className="flex flex-wrap gap-2 mt-2 justify-center">
+          <div className="flex lg:hidden">
+            <SystemStatusBar systems={health.systems} />
+          </div>
+          <div className="flex md:hidden">
+            <MetricsBar metrics={metrics} />
+          </div>
         </div>
       </header>
 
@@ -195,6 +212,65 @@ export default function App() {
 // Sub-components
 // ──────────────────────────────────────────────
 
+// ──────────────────────────────────────────────
+// System Status & Gas
+// ──────────────────────────────────────────────
+
+const STATUS_DOT_COLORS: Record<SubsystemStatus, string> = {
+  online: '#22c55e',
+  warming_up: '#f59e0b',
+  offline: '#ef4444',
+  shutting_down: '#f97316',
+};
+
+const STATUS_LABELS: Record<SubsystemStatus, string> = {
+  online: 'Online',
+  warming_up: 'Warming Up',
+  offline: 'Offline',
+  shutting_down: 'Shutting Down',
+};
+
+function SystemStatusBar({ systems }: { systems: SubsystemHealth[] }) {
+  if (systems.length === 0) return null;
+  return (
+    <div className="flex items-center gap-3 text-xs">
+      {systems.map((sys) => (
+        <div key={sys.name} className="flex items-center gap-1.5" title={`${sys.name}: ${STATUS_LABELS[sys.status]}${sys.detail ? ` — ${sys.detail}` : ''}${sys.latency_ms != null ? ` (${sys.latency_ms}ms)` : ''}`}>
+          <div
+            className={`w-2 h-2 rounded-full flex-shrink-0 ${sys.status === 'offline' ? 'animate-pulse' : ''}`}
+            style={{ background: STATUS_DOT_COLORS[sys.status] }}
+          />
+          <span className="text-gray-400 hidden xl:inline">{sys.name}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function GasIndicator({ gas }: { gas: GasInfo }) {
+  const isLow = gas.is_low;
+  return (
+    <div
+      className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border ${
+        isLow
+          ? 'border-red-700 bg-red-950/60 animate-pulse'
+          : 'border-gray-700 bg-gray-800/60'
+      }`}
+      title={`Relayer balance: ${gas.relayer_balance_eth} ETH\nGas price: ${gas.gas_price_gwei.toFixed(2)} gwei\nEstimated txs remaining: ${gas.estimated_txs_remaining}`}
+    >
+      <svg className={`w-3.5 h-3.5 ${isLow ? 'text-red-400' : 'text-green-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+      <span className={`font-mono ${isLow ? 'text-red-400 font-bold' : 'text-gray-300'}`}>
+        {gas.relayer_balance_eth} ETH
+      </span>
+      {isLow && (
+        <span className="text-red-400 font-bold">LOW</span>
+      )}
+    </div>
+  );
+}
+
 function MetricsBar({ metrics }: { metrics: ReturnType<typeof useMetrics> }) {
   return (
     <div className="flex gap-4 text-xs">
@@ -244,7 +320,10 @@ function TransactionRow({
       ) : (
         <div className="text-xs text-gray-500 truncate font-mono">{tx.sender}</div>
       )}
-      <div className="text-xs text-gray-400 mt-1">{tx.amount} wei</div>
+      <div className="flex items-center justify-between text-xs text-gray-400 mt-1">
+        <span>{tx.amount} wei</span>
+        <span className="text-gray-500 text-[10px]">{new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
+      </div>
     </button>
   );
 }
@@ -295,8 +374,8 @@ function PipelineView({ events, currentState }: { events: LifecycleEvent[]; curr
 }
 
 function SimulationControls({
-  running, remainingSeconds, startSimulation, stopSimulation, clearData,
-}: ReturnType<typeof useSimulation>) {
+  running, remainingSeconds, startSimulation, stopSimulation, onClear,
+}: ReturnType<typeof useSimulation> & { onClear: () => void }) {
   const mins = Math.floor(remainingSeconds / 60);
   const secs = remainingSeconds % 60;
   return (
@@ -322,7 +401,7 @@ function SimulationControls({
         </button>
       )}
       <button
-        onClick={() => { if (confirm('Clear all demo data?')) clearData(); }}
+        onClick={onClear}
         className="px-3 py-1 rounded text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-400 transition"
         title="Clear all transactions and events"
       >

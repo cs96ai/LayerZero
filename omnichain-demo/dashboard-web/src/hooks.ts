@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   CrossChainMessage,
+  GasInfo,
   LifecycleEvent,
   MetricsResponse,
+  SubsystemHealth,
+  SystemHealthResponse,
   TransactionDetailResponse,
   TransactionListResponse,
 } from './types';
@@ -54,6 +57,42 @@ export function useBackendHealth() {
   }, []);
 
   return { status, elapsed };
+}
+
+// ──────────────────────────────────────────────
+// System health hook (subsystem status + gas)
+// ──────────────────────────────────────────────
+
+export function useSystemHealth(pollMs = 5000) {
+  const [systems, setSystems] = useState<SubsystemHealth[]>([]);
+  const [gas, setGas] = useState<GasInfo>({
+    relayer_balance_wei: '0',
+    relayer_balance_eth: '0.000000',
+    gas_price_gwei: 0,
+    estimated_txs_remaining: 0,
+    is_low: false,
+  });
+
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/health/systems`);
+        if (res.ok) {
+          const data: SystemHealthResponse = await res.json();
+          if (active) {
+            setSystems(data.systems);
+            setGas(data.gas);
+          }
+        }
+      } catch { /* ignore */ }
+    };
+    poll();
+    const id = setInterval(poll, pollMs);
+    return () => { active = false; clearInterval(id); };
+  }, [pollMs]);
+
+  return { systems, gas };
 }
 
 // ──────────────────────────────────────────────
@@ -176,7 +215,9 @@ export function useEventStream() {
     };
   }, []);
 
-  return { events, connected };
+  const clearEvents = useCallback(() => setEvents([]), []);
+
+  return { events, connected, clearEvents };
 }
 
 // ──────────────────────────────────────────────

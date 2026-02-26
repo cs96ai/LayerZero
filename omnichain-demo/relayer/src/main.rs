@@ -55,6 +55,7 @@ async fn main() -> Result<()> {
         paused: std::sync::atomic::AtomicBool::new(false),
         simulation_running: std::sync::atomic::AtomicBool::new(auto_start),
         simulation_deadline: std::sync::atomic::AtomicI64::new(auto_deadline),
+        config: cfg.clone(),
     });
 
     if auto_start {

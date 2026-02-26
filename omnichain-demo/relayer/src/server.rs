@@ -17,7 +17,8 @@ use tracing::{error, info};
 
 use crate::db;
 use crate::types::{
-    AppState, MetricsResponse, SimulationRequest, SimulationStatus,
+    AppState, GasInfo, MetricsResponse, SimulationRequest, SimulationStatus,
+    SubsystemHealth, SubsystemStatus, SystemHealthResponse,
     TransactionDetailResponse, TransactionListResponse,
 };
 
@@ -44,6 +45,7 @@ pub async fn run_server(state: Arc<AppState>, port: u16) -> anyhow::Result<()> {
         .route("/ws", get(ws_handler))
         // Health check
         .route("/health", get(health))
+        .route("/health/systems", get(system_health))
         .layer(CorsLayer::permissive())
         .with_state(state)
         // Serve the dashboard static files as a fallback.
@@ -66,6 +68,125 @@ pub async fn run_server(state: Arc<AppState>, port: u16) -> anyhow::Result<()> {
 
 async fn health() -> impl IntoResponse {
     Json(serde_json::json!({"status": "ok"}))
+}
+
+async fn system_health(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let cfg = &state.config;
+    let mut systems = Vec::new();
+
+    // 1. Ethereum (Anvil) health
+    let eth_start = std::time::Instant::now();
+    let eth_status = match crate::eth::check_rpc(&cfg.eth_rpc_url).await {
+        Ok(chain_id) => {
+            let latency = eth_start.elapsed().as_millis() as u64;
+            SubsystemHealth {
+                name: "Ethereum".into(),
+                status: SubsystemStatus::Online,
+                latency_ms: Some(latency),
+                detail: Some(format!("Chain ID: {}", chain_id)),
+            }
+        }
+        Err(e) => SubsystemHealth {
+            name: "Ethereum".into(),
+            status: SubsystemStatus::Offline,
+            latency_ms: None,
+            detail: Some(format!("RPC unreachable: {}", e)),
+        },
+    };
+    systems.push(eth_status);
+
+    // 2. Solana (simulated) health — always online since it's in-process
+    systems.push(SubsystemHealth {
+        name: "Solana".into(),
+        status: SubsystemStatus::Online,
+        latency_ms: Some(0),
+        detail: Some("Simulated (in-process)".into()),
+    });
+
+    // 3. Relayer health
+    let sim_running = state.simulation_running.load(Ordering::Relaxed);
+    let paused = state.paused.load(Ordering::Relaxed);
+    let relayer_status = if paused {
+        SubsystemStatus::ShuttingDown
+    } else if sim_running {
+        SubsystemStatus::Online
+    } else {
+        SubsystemStatus::WarmingUp
+    };
+    let relayer_detail = if paused {
+        "Paused"
+    } else if sim_running {
+        "Processing"
+    } else {
+        "Click Start to run the simulation"
+    };
+    systems.push(SubsystemHealth {
+        name: "Relayer".into(),
+        status: relayer_status,
+        latency_ms: Some(0),
+        detail: Some(relayer_detail.into()),
+    });
+
+    // Gas info — Ethereum relayer balance + gas price
+    let gas = get_gas_info(cfg).await;
+
+    Json(SystemHealthResponse { systems, gas })
+}
+
+async fn get_gas_info(cfg: &crate::config::Config) -> GasInfo {
+    // Derive relayer address from private key
+    let relayer_address = {
+        use ethers::signers::{LocalWallet, Signer};
+        match cfg.relayer_private_key.parse::<LocalWallet>() {
+            Ok(w) => format!("{:?}", w.address()),
+            Err(_) => "unknown".into(),
+        }
+    };
+
+    let balance = crate::eth::get_balance(&cfg.eth_rpc_url, &relayer_address)
+        .await
+        .unwrap_or_default();
+    let gas_price = crate::eth::get_gas_price(&cfg.eth_rpc_url)
+        .await
+        .unwrap_or_default();
+
+    // Convert balance to ETH string (18 decimals)
+    let balance_eth = {
+        let wei_str = balance.to_string();
+        let len = wei_str.len();
+        if len <= 18 {
+            let padded = format!("{:0>19}", wei_str);
+            let (whole, frac) = padded.split_at(padded.len() - 18);
+            format!("{}.{}", whole, &frac[..6])
+        } else {
+            let (whole, frac) = wei_str.split_at(len - 18);
+            format!("{}.{}", whole, &frac[..6.min(frac.len())])
+        }
+    };
+
+    // Gas price in gwei
+    let gas_price_gwei = gas_price.as_u128() as f64 / 1_000_000_000.0;
+
+    // Estimate txs remaining: balance / (gas_limit * gas_price)
+    let cost_per_tx = gas_price.saturating_mul(ethers::types::U256::from(500_000u64));
+    let estimated_txs = if cost_per_tx.is_zero() {
+        u64::MAX
+    } else {
+        (balance / cost_per_tx).as_u64()
+    };
+
+    // Consider low if fewer than 50 txs remaining
+    let is_low = estimated_txs < 50;
+
+    GasInfo {
+        relayer_balance_wei: balance.to_string(),
+        relayer_balance_eth: balance_eth,
+        gas_price_gwei,
+        estimated_txs_remaining: estimated_txs,
+        is_low,
+    }
 }
 
 async fn list_transactions(

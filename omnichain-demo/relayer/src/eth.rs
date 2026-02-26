@@ -106,6 +106,28 @@ pub async fn get_block_number(rpc_url: &str) -> Result<u64> {
     Ok(block.as_u64())
 }
 
+/// Get the ETH balance of an address (in wei).
+pub async fn get_balance(rpc_url: &str, address: &str) -> Result<U256> {
+    let provider = Provider::<Http>::try_from(rpc_url)?;
+    let addr = Address::from_str(address)?;
+    let balance = provider.get_balance(addr, None).await?;
+    Ok(balance)
+}
+
+/// Get the current gas price (in wei).
+pub async fn get_gas_price(rpc_url: &str) -> Result<U256> {
+    let provider = Provider::<Http>::try_from(rpc_url)?;
+    let price = provider.get_gas_price().await?;
+    Ok(price)
+}
+
+/// Check if the Ethereum RPC is reachable by fetching the chain ID.
+pub async fn check_rpc(rpc_url: &str) -> Result<u64> {
+    let provider = Provider::<Http>::try_from(rpc_url)?;
+    let chain_id = provider.get_chainid().await?;
+    Ok(chain_id.as_u64())
+}
+
 /// Sign a settlement message: keccak256(abi.encodePacked(nonce, result))
 /// Returns the 65-byte signature.
 pub fn sign_settlement(private_key: &str, nonce: u64, result: &[u8]) -> Result<Vec<u8>> {
