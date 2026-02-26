@@ -1,0 +1,12 @@
+version: "3.9"
+
+# Unified container: Anvil + Relayer + Dashboard on a single port (3001).
+# Anvil runs inside the container; Solana execution is simulated.
+services:
+  escrow-demo:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - AUTO_START_SIMULATION=true
+      - RUST_LOG=relayer=info
