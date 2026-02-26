@@ -51,7 +51,7 @@ COPY --from=dashboard-builder /app/dist /dashboard
 
 # Copy the entrypoint script
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Environment defaults
 ENV ETH_RPC_URL=http://127.0.0.1:8545 \
