@@ -85,7 +85,19 @@ export function useSystemHealth(pollMs = 5000) {
             setGas(data.gas);
           }
         }
-      } catch { /* ignore */ }
+      } catch {
+        // Clear data on error to avoid showing stale data
+        if (active) {
+          setSystems([]);
+          setGas({
+            relayer_balance_wei: '0',
+            relayer_balance_eth: '0.000000',
+            gas_price_gwei: 0,
+            estimated_txs_remaining: 0,
+            is_low: false,
+          });
+        }
+      }
     };
     poll();
     const id = setInterval(poll, pollMs);
@@ -116,7 +128,11 @@ export function useTransactions(pollMs = 3000) {
           }
         }
       } catch {
-        // Relayer may not be running yet
+        // Relayer may not be running yet, clear data to avoid showing stale data
+        if (active) {
+          setTransactions([]);
+          setTotal(0);
+        }
       }
     };
     poll();
@@ -165,7 +181,15 @@ export function useMetrics(pollMs = 3000) {
           const data: MetricsResponse = await res.json();
           if (active) setMetrics(data);
         }
-      } catch { /* ignore */ }
+      } catch {
+        // Clear metrics on error to avoid showing stale data
+        if (active) {
+          setMetrics({
+            total_transactions: 0, settled: 0, failed: 0, pending: 0,
+            total_retries: 0,
+          });
+        }
+      }
     };
     poll();
     const id = setInterval(poll, pollMs);
